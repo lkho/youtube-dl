@@ -98,7 +98,7 @@ class ViuIE(InfoExtractor):
                 'url': stream_url,
                 'vbr': br,
                 'ext': 'mp4',
-                'filesize': stream_info.get('size', {}).get(vid_format)
+                'filesize_approx': stream_info.get('size', {}).get(vid_format)
             })
         self._sort_formats(formats)
 
