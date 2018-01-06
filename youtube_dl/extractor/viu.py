@@ -11,6 +11,8 @@ from ..compat import (
 from ..utils import (
     ExtractorError,
     int_or_none,
+    smuggle_url,
+    unsmuggle_url,
 )
 
 
@@ -168,7 +170,7 @@ class ViuPlaylistIE(ViuBaseIE):
 
 class ViuOTTIE(InfoExtractor):
     IE_NAME = 'viu:ott'
-    _VALID_URL = r'https?://(?:www\.)?viu\.com/ott/(?P<country_code>[a-z]{2})/[a-z]{2}-[a-z]{2}/vod/(?P<id>\d+)'
+    _VALID_URL = r'https?://(?:www\.)?viu\.com/ott/(?P<country_code>[a-z]{2})/(?P<lang_code>[a-z]{2}-[a-z]{2})/vod/(?P<id>\d+)'
     _TESTS = [{
         'url': 'http://www.viu.com/ott/sg/en-us/vod/3421/The%20Prime%20Minister%20and%20I',
         'info_dict': {
@@ -179,6 +181,7 @@ class ViuOTTIE(InfoExtractor):
         },
         'params': {
             'skip_download': 'm3u8 download',
+            'noplaylist': True,
         },
         'skip': 'Geo-restricted to Singapore',
     }, {
@@ -191,6 +194,19 @@ class ViuOTTIE(InfoExtractor):
         },
         'params': {
             'skip_download': 'm3u8 download',
+            'noplaylist': True,
+        },
+        'skip': 'Geo-restricted to Hong Kong',
+    }, {
+        'url': 'https://www.viu.com/ott/hk/zh-hk/vod/68776/%E6%99%82%E5%B0%9A%E5%AA%BD%E5%92%AA',
+        'playlist_count': 12,
+        'info_dict': {
+            'id': '3916',
+            'title': '時尚媽咪',
+        },
+        'params': {
+            'skip_download': 'm3u8 download',
+            'noplaylist': False,
         },
         'skip': 'Geo-restricted to Hong Kong',
     }]
@@ -203,7 +219,8 @@ class ViuOTTIE(InfoExtractor):
     }
 
     def _real_extract(self, url):
-        country_code, video_id = re.match(self._VALID_URL, url).groups()
+        url, idata = unsmuggle_url(url, {})
+        country_code, lang_code, video_id = re.match(self._VALID_URL, url).groups()
 
         query = {
             'r': 'vod/ajax-detail',
@@ -222,6 +239,37 @@ class ViuOTTIE(InfoExtractor):
         video_data = product_data.get('current_product')
         if not video_data:
             raise ExtractorError('This video is not available in your region.', expected=True)
+
+        # return entire series as playlist if not --no-playlist
+        if not (self._downloader.params.get('noplaylist') or idata.get('force_noplaylist')):
+            series = product_data.get('series', {})
+            product = series.get('product')
+            if product:
+                entries = []
+                for entry in sorted(product, key=lambda x: int_or_none(x.get('number', 0))):
+                    item_id = entry.get('product_id')
+                    if not item_id:
+                        continue
+                    item_id = compat_str(item_id)
+                    entries.append(self.url_result(
+                        smuggle_url(
+                            'http://www.viu.com/ott/%s/%s/vod/%s/' % (country_code, lang_code, item_id),
+                            {'force_noplaylist': True}),  # prevent infinite recursion
+                        'ViuOTT',
+                        item_id,
+                        entry.get('synopsis', '').strip()))
+
+                return self.playlist_result(
+                    entries,
+                    video_data.get('series_id'),
+                    series.get('name'),
+                    series.get('description'))
+        # else fall-through
+
+        if self._downloader.params.get('noplaylist'):
+            self.to_screen(
+                'Downloading only video %s in series %s because of --no-playlist' %
+                (video_id, video_data.get('series_id')))
 
         stream_data = self._download_json(
             'https://d1k2us671qcoau.cloudfront.net/distribute_web_%s.php' % country_code,
