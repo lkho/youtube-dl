@@ -1349,6 +1349,7 @@ from .viu import (
     ViuIE,
     ViuPlaylistIE,
     ViuOTTIE,
+    ViuTVIE,
 )
 from .vk import (
     VKIE,

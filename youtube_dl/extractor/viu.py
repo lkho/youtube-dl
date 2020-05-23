@@ -1,6 +1,9 @@
 # coding: utf-8
 from __future__ import unicode_literals
 
+from datetime import datetime
+import json
+import random
 import re
 
 from .common import InfoExtractor
@@ -317,4 +320,133 @@ class ViuOTTIE(InfoExtractor):
             'thumbnail': video_data.get('cover_image_url'),
             'formats': formats,
             'subtitles': subtitles,
+        }
+
+
+class ViuTVIE(InfoExtractor):
+    IE_NAME = 'viu:tv'
+    _VALID_URL = r'https?://(?:www\.)?viu\.tv/encore/(?P<program_slug>[^/]+)(?:/(?P<episode_slug>[^/?]+))?'
+    _TESTS = [{
+        'url': 'https://viu.tv/encore/leap-day/leap-daye2si-hung-long-yan',
+        'info_dict': {
+            'id': '202002281024764',
+            'ext': 'mp4',
+            'title': '"時空浪人',
+        },
+        'params': {
+            'skip_download': 'm3u8 download',
+        },
+        'skip': 'Geo-restricted to Hong Kong',
+    }]
+
+    def _real_extract(self, url):
+        program_slug, episode_slug = re.match(self._VALID_URL, url).groups()
+
+        product_data = self._download_json(
+            'https://api.viu.tv/production/programmes/%s' % program_slug,
+            'Downloading program info')['programme']
+
+        episodes = product_data['episodes']
+
+        program_title = product_data.get('programmeMeta', {}).get('seriesTitle') or \
+            product_data.get('title')
+
+        # return entire series as playlist if no episode_slug
+        if episode_slug is None:
+            entries = []
+            for entry in sorted(
+                    episodes,
+                    key=lambda x: int_or_none(x.get('episodeNum', 0))):
+                item_slug = entry.get('slug')
+                item_id = entry.get('productId')
+                if not item_id:
+                    continue
+                item_slug = compat_str(item_slug)
+                video_meta = entry.get('videoMeta', {})
+                title = video_meta.get('title') or \
+                    entry.get('episodeNameU3') or \
+                    entry.get('ga_title')
+
+                entries.append(self.url_result(
+                    'http://viu.tv/encore/%s/%s' % (program_slug, item_slug),
+                    'ViuTV', item_id, title))
+
+            return self.playlist_result(
+                entries,
+                product_data.get('programmeId'),
+                program_title,
+                product_data.get('synopsis'))
+        # else fall-through
+
+        ep_data = next((x for x in episodes if x.get('slug') == episode_slug), {})
+        product_id = ep_data.get('productId')
+
+        if not product_id:
+            raise ExtractorError('Video %s does not exist' % program_slug, expected=True)
+
+        random_cookie = '%018x' % random.randrange(16 ** 18)
+        payload = {
+            'PIN': 'password',
+            'callerReferenceNo': datetime.now().strftime('%Y%m%d%H%M%S'),
+            'contentId': product_id,
+            'contentType': 'Vod',
+            'cookie': random_cookie,
+            'deviceId': random_cookie,
+            'deviceType': 'ANDROID_PHONE',
+            'format': 'HLS',
+            'mode': 'prod',
+            'productId': product_id,
+        }
+
+        get_vod_data = self._download_json(
+            'https://api.viu.now.com/p8/3/getVodURL', product_id,
+            note='Downloading stream info', data=json.dumps(payload).encode())
+
+        m3u8_url = next(iter(get_vod_data.get('asset', [])), None)
+
+        if not m3u8_url:
+            raise ExtractorError(
+                'Cannot get stream info', expected=True, video_id=product_id)
+
+        formats = self._extract_m3u8_formats(m3u8_url, product_id)
+
+        # subtitles = {}
+        # for sub in video_data.get('subtitle', []):
+        #     sub_url = sub.get('url')
+        #     if not sub_url:
+        #         continue
+        #     subtitles.setdefault(sub.get('name'), []).append({
+        #         'url': sub_url,
+        #         'ext': 'srt',
+        #     })
+
+        video_meta = ep_data.get('videoMeta', {})
+
+        title = video_meta.get('title') or \
+            ep_data.get('episodeNameU3') or \
+            ep_data.get('ga_title')
+
+        tags = video_meta.get('tags')
+        try:
+            if isinstance(tags, list):
+                tags = [x.get('name') for x in tags if x.get('name')]
+            else:
+                tags = None
+        except TypeError:
+            tags = None
+
+        return {
+            'id': product_id,
+            'title': title,
+            'formats': formats,
+            'description': ep_data.get('videoMeta', {}).get('program_synopsis'),
+            'series': program_title,
+            'episode': title,
+            'episode_number': int_or_none(ep_data.get('episodeNum')),
+            'duration': int_or_none(ep_data.get('totalDurationSec')),
+            'thumbnail': ep_data.get('avatar'),
+            'programme_slug': product_data.get('slug'),
+            'slug': ep_data.get('slug'),
+            'tags': tags,
+            # 'subtitles': subtitles,
         }
