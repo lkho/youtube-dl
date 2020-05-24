@@ -339,6 +339,16 @@ class ViuTVIE(InfoExtractor):
         'skip': 'Geo-restricted to Hong Kong',
     }]
 
+    _SUBTITLE_LANG = {
+        'chinese': 'TRD',
+        'english': 'GBR',
+        'german': 'DEU',
+        'spanish': 'ESP',
+        'french': 'FRA',
+        'italian': 'ITA',
+        'japanese': 'JAP',
+    }
+
     def _real_extract(self, url):
         program_slug, episode_slug = re.match(self._VALID_URL, url).groups()
 
@@ -410,15 +420,15 @@ class ViuTVIE(InfoExtractor):
 
         formats = self._extract_m3u8_formats(m3u8_url, product_id)
 
-        # subtitles = {}
-        # for sub in video_data.get('subtitle', []):
-        #     sub_url = sub.get('url')
-        #     if not sub_url:
-        #         continue
-        #     subtitles.setdefault(sub.get('name'), []).append({
-        #         'url': sub_url,
-        #         'ext': 'srt',
-        #     })
+        subtitles = {}
+        for lang in (ep_data.get('productSubtitle', '').split(',')):
+            key = self._SUBTITLE_LANG.get(lang.lower())
+            if not key:
+                continue
+            subtitles.setdefault(lang, []).append({
+                'url': re.sub(r'\.m3u8.*$', '-' + key + '.srt', m3u8_url),
+                'ext': 'srt',
+            })
 
         video_meta = ep_data.get('videoMeta', {})
 
@@ -448,5 +458,5 @@ class ViuTVIE(InfoExtractor):
             'programme_slug': product_data.get('slug'),
             'slug': ep_data.get('slug'),
             'tags': tags,
-            # 'subtitles': subtitles,
+            'subtitles': subtitles,
         }
