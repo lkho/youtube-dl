@@ -354,7 +354,7 @@ class ViuTVIE(InfoExtractor):
 
         product_data = self._download_json(
             'https://api.viu.tv/production/programmes/%s' % program_slug,
-            'Downloading program info')['programme']
+            program_slug, 'Downloading program info')['programme']
 
         episodes = product_data['episodes']
 
