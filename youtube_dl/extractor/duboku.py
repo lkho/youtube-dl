@@ -5,7 +5,16 @@ import re
 
 from .common import InfoExtractor
 from ..compat import compat_urlparse
-from ..utils import *
+from ..utils import (
+    clean_html,
+    extract_attributes,
+    ExtractorError,
+    get_elements_by_class,
+    int_or_none,
+    js_to_json,
+    smuggle_url,
+    unescapeHTML,
+)
 
 
 def _get_elements_by_tag_and_attrib(html, tag=None, attribute=None, value=None, escape_value=True):
@@ -47,14 +56,29 @@ class DubokuIE(InfoExtractor):
     IE_NAME = 'duboku'
     IE_DESC = 'www.duboku.co'
 
-    _VALID_URL = r'(?:https?://[^/]+\.duboku\.co/vodplay/)(?P<id>[0-9\-]+)\.html.*'
+    _VALID_URL = r'(?:https?://[^/]+\.duboku\.co/vodplay/)(?P<id>[0-9]+-[0-9-]+)\.html.*'
     _TESTS = [{
         'url': 'https://www.duboku.co/vodplay/1575-1-1.html',
         'info_dict': {
             'id': '1575-1-1',
-            'title': '白色月光',
-            'season': 1,
-            'episode': 1,
+            'ext': 'ts',
+            'series': '白色月光',
+            'title': 'contains:白色月光',
+            'season_number': 1,
+            'episode_number': 1,
+        },
+        'params': {
+            'skip_download': 'm3u8 download',
+        },
+    }, {
+        'url': 'https://www.duboku.co/vodplay/1588-1-1.html',
+        'info_dict': {
+            'id': '1588-1-1',
+            'ext': 'ts',
+            'series': '亲爱的自己',
+            'title': 'contains:预告片',
+            'season_number': 1,
+            'episode_number': 1,
         },
         'params': {
             'skip_download': 'm3u8 download',
@@ -77,7 +101,7 @@ class DubokuIE(InfoExtractor):
 
         player_data = self._search_regex(
             self._PLAYER_DATA_PATTERN, webpage_html, 'player_data')
-        player_data = self._parse_json(js_to_json(player_data), video_id)
+        player_data = self._parse_json(player_data, video_id, js_to_json)
 
         # extract title
 
@@ -97,8 +121,9 @@ class DubokuIE(InfoExtractor):
                         title = re.sub(r'[\s\r\n\t]+', ' ', title)
                         break
 
-        data_url = player_data['url']
-        assert data_url
+        data_url = player_data.get('url')
+        if not data_url:
+            raise ExtractorError('Cannot find url in player_data')
         data_from = player_data.get('from')
 
         # if it is an embedded iframe, maybe it's an external source
@@ -137,24 +162,26 @@ class DubokuPlaylistIE(InfoExtractor):
 
     _VALID_URL = r'(?:https?://[^/]+\.duboku\.co/voddetail/)(?P<id>[0-9]+)\.html.*'
     _TESTS = [{
-        'url': 'https://www.duboku.co/vodplay/1575.html',
+        'url': 'https://www.duboku.co/voddetail/1575.html',
         'info_dict': {
-            'id': '1575#playlist1',
+            'id': 'startswith:1575',
             'title': '白色月光',
         },
         'playlist_count': 12,
     }, {
-        'url': 'https://www.duboku.co/vodplay/1554.html',
+        'url': 'https://www.duboku.co/voddetail/1554.html',
         'info_dict': {
-            'id': '1554#playlist1',
+            'id': 'startswith:1554',
             'title': '以家人之名',
         },
+        'playlist_mincount': 30,
     }, {
-        'url': 'https://www.duboku.co/vodplay/1554.html#playlist2',
+        'url': 'https://www.duboku.co/voddetail/1554.html#playlist2',
         'info_dict': {
             'id': '1554#playlist2',
             'title': '以家人之名',
         },
+        'playlist_mincount': 27,
     }]
 
     def _real_extract(self, url):
@@ -199,7 +226,7 @@ class DubokuPlaylistIE(InfoExtractor):
             playlist = playlists.get(fragment)
             playlist_id = fragment
         else:
-            first = next(iter(playlists.items()))
+            first = next(iter(playlists.items()), None)
             if first:
                 (playlist_id, playlist) = first
         if not playlist:
@@ -209,5 +236,6 @@ class DubokuPlaylistIE(InfoExtractor):
         # return url results
         return self.playlist_result([
             self.url_result(
-                'https://www.duboku.co' + x['href'], DubokuIE.IE_NAME, video_title=x.get('title'))
+                compat_urlparse.urljoin('https://www.duboku.co', x['href']),
+                ie=DubokuIE.ie_key(), video_title=x.get('title'))
             for x in playlist], series_id + '#' + playlist_id, title)
