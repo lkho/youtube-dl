@@ -220,6 +220,10 @@ class ViuOTTIE(InfoExtractor):
         'TH': 4,
         'PH': 5,
     }
+    _LANGUAGE_FLAG = {
+        'zh-hk': 1,
+        'en-us': 3,
+    }
 
     def _real_extract(self, url):
         url, idata = unsmuggle_url(url, {})
@@ -278,6 +282,7 @@ class ViuOTTIE(InfoExtractor):
             'https://d1k2us671qcoau.cloudfront.net/distribute_web_%s.php' % country_code,
             video_id, 'Downloading stream info', query={
                 'ccs_product_id': video_data['ccs_product_id'],
+                'language_flag_id': self._LANGUAGE_FLAG.get(lang_code.lower()) or '3',
             }, headers={
                 'Referer': url,
                 'Origin': re.search(r'https?://[^/]+', url).group(0),
