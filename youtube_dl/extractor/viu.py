@@ -14,6 +14,7 @@ from ..compat import (
 )
 from ..utils import (
     ExtractorError,
+    determine_ext,
     int_or_none,
     smuggle_url,
     unsmuggle_url,
@@ -440,13 +441,25 @@ class ViuTVIE(InfoExtractor):
             'https://api.viu.now.com/p8/3/getVodURL', product_id,
             note='Downloading stream info', data=json.dumps(payload).encode())
 
-        m3u8_url = next(iter(get_vod_data.get('asset', [])), None)
+        manifest_url = next(iter(get_vod_data.get('asset', [])), None)
+        drm = get_vod_data.get('drmToken', None)
 
-        if not m3u8_url:
+        if not manifest_url:
             raise ExtractorError(
                 'Cannot get stream info', expected=True, video_id=product_id)
 
-        formats = self._extract_m3u8_formats(m3u8_url, product_id)
+        formats = []
+
+        ext = determine_ext(manifest_url)
+        if ext == 'm3u8':
+            formats = self._extract_m3u8_formats(
+                    manifest_url, product_id, 'mp4', entry_protocol='m3u8_native',
+                    fatal=False)
+        elif ext == 'mpd':
+            formats = self._extract_mpd_formats(manifest_url, product_id, fatal=False)
+
+        if not formats and drm:
+            raise ExtractorError('This video is DRM protected.', expected=True)
 
         subtitles = {}
         for lang in (ep_data.get('productSubtitle', '').split(',')):
@@ -454,7 +467,7 @@ class ViuTVIE(InfoExtractor):
             if not key:
                 continue
             subtitles.setdefault(lang, []).append({
-                'url': re.sub(r'\.m3u8.*$', '-' + key + '.srt', m3u8_url),
+                'url': 'https://static.viu.tv/subtitle/{0}/{0}-{1}.srt'.format(product_id, key),
                 'ext': 'srt',
             })
 
@@ -472,6 +485,8 @@ class ViuTVIE(InfoExtractor):
                 tags = None
         except TypeError:
             tags = None
+
+        self._sort_formats(formats)
 
         return {
             'id': product_id,
