@@ -61,7 +61,7 @@ class DubokuIE(InfoExtractor):
         'url': 'https://www.duboku.co/vodplay/1575-1-1.html',
         'info_dict': {
             'id': '1575-1-1',
-            'ext': 'ts',
+            'ext': 'mp4',
             'series': '白色月光',
             'title': 'contains:白色月光',
             'season_number': 1,
